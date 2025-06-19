@@ -6,7 +6,7 @@ import { getStorage } from 'firebase/storage';
 // Firebase configuration
 // يجب استبدال هذه القيم بقيم مشروعك الفعلي من Firebase Console
 const firebaseConfig = {
-  apiKey: "your-api-key",
+  apiKey: "AIzaSyBRZG8vW9YONEbDSbte3C8vuLYgwmFslV8",
   authDomain: "your-project.firebaseapp.com",
   projectId: "your-project-id",
   storageBucket: "your-project.appspot.com",
