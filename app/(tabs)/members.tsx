@@ -21,22 +21,40 @@ import {
   UserCheck,
   UserX,
   Edit,
-  Trash2
+  Trash2,
+  Clock,
+  CheckCircle
 } from 'lucide-react-native';
 
 export default function MembersScreen() {
   const { user } = useAuth();
-  const { users, subscriptions, addUser, updateUser, deleteUser } = useGym();
+  const { 
+    users, 
+    subscriptions, 
+    pendingUsers = [], 
+    addUser, 
+    updateUser, 
+    deleteUser, 
+    approveUser 
+  } = useGym();
   
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'expired'>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'expired' | 'pending'>('all');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [approvingUser, setApprovingUser] = useState<User | null>(null);
   
   // Form states
   const [formName, setFormName] = useState('');
   const [formPassword, setFormPassword] = useState('');
+  const [formPhone, setFormPhone] = useState('');
+  const [formEmail, setFormEmail] = useState('');
   const [formRole, setFormRole] = useState<'member' | 'admin'>('member');
+
+  // Approval form states
+  const [subscriptionType, setSubscriptionType] = useState<'monthly' | 'quarterly' | 'yearly'>('monthly');
+  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
 
   if (user?.role !== 'admin') {
     return (
@@ -46,7 +64,9 @@ export default function MembersScreen() {
     );
   }
 
-  const filteredUsers = users.filter(u => {
+  const allUsers = [...users, ...pendingUsers];
+  
+  const filteredUsers = allUsers.filter(u => {
     const matchesSearch = u.name.toLowerCase().includes(searchQuery.toLowerCase());
     const userSubscription = subscriptions.find(s => s.userId === u.id);
     
@@ -55,10 +75,31 @@ export default function MembersScreen() {
       matchesFilter = userSubscription && new Date(userSubscription.endDate) >= new Date();
     } else if (filterStatus === 'expired') {
       matchesFilter = !userSubscription || new Date(userSubscription.endDate) < new Date();
+    } else if (filterStatus === 'pending') {
+      matchesFilter = u.subscriptionStatus === 'pending';
     }
     
     return matchesSearch && matchesFilter;
   });
+
+  const calculateEndDate = (startDate: string, type: 'monthly' | 'quarterly' | 'yearly'): string => {
+    const start = new Date(startDate);
+    const end = new Date(start);
+    
+    switch (type) {
+      case 'monthly':
+        end.setMonth(end.getMonth() + 1);
+        break;
+      case 'quarterly':
+        end.setMonth(end.getMonth() + 3);
+        break;
+      case 'yearly':
+        end.setFullYear(end.getFullYear() + 1);
+        break;
+    }
+    
+    return end.toISOString().split('T')[0];
+  };
 
   const handleAddUser = async () => {
     if (!formName.trim() || !formPassword.trim()) {
@@ -70,6 +111,8 @@ export default function MembersScreen() {
       const newUser: Omit<User, 'id' | 'createdAt'> = {
         name: formName.trim(),
         password: formPassword.trim(),
+        phone: formPhone.trim() || undefined,
+        email: formEmail.trim() || undefined,
         role: formRole,
         qrCode: '', // Will be generated after creating user
         subscriptionStatus: 'pending'
@@ -78,9 +121,7 @@ export default function MembersScreen() {
       await addUser(newUser);
       
       // Reset form
-      setFormName('');
-      setFormPassword('');
-      setFormRole('member');
+      resetForm();
       setShowAddModal(false);
       
       Alert.alert('تم بنجاح', 'تم إضافة العضو الجديد');
@@ -99,17 +140,38 @@ export default function MembersScreen() {
       await updateUser(editingUser.id, {
         name: formName.trim(),
         password: formPassword.trim(),
+        phone: formPhone.trim() || undefined,
+        email: formEmail.trim() || undefined,
         role: formRole
       });
       
+      resetForm();
       setEditingUser(null);
-      setFormName('');
-      setFormPassword('');
-      setFormRole('member');
+      setShowAddModal(false);
       
       Alert.alert('تم بنجاح', 'تم تحديث بيانات العضو');
     } catch (error) {
       Alert.alert('خطأ', 'فشل في تحديث بيانات العضو');
+    }
+  };
+
+  const handleApproveUser = async () => {
+    if (!approvingUser || !approveUser) return;
+
+    try {
+      const endDate = calculateEndDate(startDate, subscriptionType);
+      
+      await approveUser(approvingUser.id, {
+        type: subscriptionType,
+        startDate,
+        endDate
+      });
+
+      setShowApprovalModal(false);
+      setApprovingUser(null);
+      Alert.alert('تم بنجاح', 'تم تفعيل اشتراك العضو');
+    } catch (error) {
+      Alert.alert('خطأ', 'فشل في تفعيل الاشتراك');
     }
   };
 
@@ -139,20 +201,34 @@ export default function MembersScreen() {
     setEditingUser(userToEdit);
     setFormName(userToEdit.name);
     setFormPassword(userToEdit.password);
+    setFormPhone(userToEdit.phone || '');
+    setFormEmail(userToEdit.email || '');
     setFormRole(userToEdit.role);
     setShowAddModal(true);
+  };
+
+  const openApprovalModal = (userToApprove: User) => {
+    setApprovingUser(userToApprove);
+    setShowApprovalModal(true);
+  };
+
+  const resetForm = () => {
+    setFormName('');
+    setFormPassword('');
+    setFormPhone('');
+    setFormEmail('');
+    setFormRole('member');
   };
 
   const closeModal = () => {
     setShowAddModal(false);
     setEditingUser(null);
-    setFormName('');
-    setFormPassword('');
-    setFormRole('member');
+    resetForm();
   };
 
   const renderUser = ({ item }: { item: User }) => {
     const userSubscription = subscriptions.find(s => s.userId === item.id);
+    const isPending = item.subscriptionStatus === 'pending';
     
     return (
       <View style={styles.userContainer}>
@@ -161,6 +237,14 @@ export default function MembersScreen() {
           subscription={userSubscription}
         />
         <View style={styles.userActions}>
+          {isPending && (
+            <TouchableOpacity
+              style={[styles.actionButton, styles.approveButton]}
+              onPress={() => openApprovalModal(item)}
+            >
+              <CheckCircle size={16} color="#34C759" />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={styles.actionButton}
             onPress={() => openEditModal(item)}
@@ -191,6 +275,16 @@ export default function MembersScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Pending Users Alert */}
+      {pendingUsers.length > 0 && (
+        <View style={styles.pendingAlert}>
+          <Clock size={20} color="#FF9500" />
+          <Text style={styles.pendingText}>
+            {pendingUsers.length} عضو في انتظار الموافقة
+          </Text>
+        </View>
+      )}
+
       {/* Search and Filter */}
       <View style={styles.controlsContainer}>
         <View style={styles.searchContainer}>
@@ -205,7 +299,7 @@ export default function MembersScreen() {
         </View>
         
         <View style={styles.filterContainer}>
-          {(['all', 'active', 'expired'] as const).map((status) => (
+          {(['all', 'active', 'expired', 'pending'] as const).map((status) => (
             <TouchableOpacity
               key={status}
               style={[
@@ -218,7 +312,9 @@ export default function MembersScreen() {
                 styles.filterButtonText,
                 filterStatus === status && styles.activeFilterButtonText
               ]}>
-                {status === 'all' ? 'الكل' : status === 'active' ? 'نشط' : 'منتهي'}
+                {status === 'all' ? 'الكل' : 
+                 status === 'active' ? 'نشط' : 
+                 status === 'expired' ? 'منتهي' : 'معلق'}
               </Text>
             </TouchableOpacity>
           ))}
@@ -258,6 +354,31 @@ export default function MembersScreen() {
                 value={formName}
                 onChangeText={setFormName}
                 placeholder="اسم العضو"
+                textAlign="right"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>رقم الهاتف</Text>
+              <TextInput
+                style={styles.textInput}
+                value={formPhone}
+                onChangeText={setFormPhone}
+                placeholder="رقم الهاتف (اختياري)"
+                keyboardType="phone-pad"
+                textAlign="right"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>البريد الإلكتروني</Text>
+              <TextInput
+                style={styles.textInput}
+                value={formEmail}
+                onChangeText={setFormEmail}
+                placeholder="البريد الإلكتروني (اختياري)"
+                keyboardType="email-address"
+                autoCapitalize="none"
                 textAlign="right"
               />
             </View>
@@ -308,6 +429,75 @@ export default function MembersScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Approval Modal */}
+      <Modal
+        visible={showApprovalModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>تفعيل اشتراك العضو</Text>
+            <TouchableOpacity onPress={() => setShowApprovalModal(false)}>
+              <Text style={styles.cancelButton}>إلغاء</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.formContainer}>
+            <Text style={styles.approvalUserName}>
+              {approvingUser?.name}
+            </Text>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>نوع الاشتراك</Text>
+              <View style={styles.subscriptionContainer}>
+                {(['monthly', 'quarterly', 'yearly'] as const).map((type) => (
+                  <TouchableOpacity
+                    key={type}
+                    style={[
+                      styles.subscriptionButton,
+                      subscriptionType === type && styles.activeSubscriptionButton
+                    ]}
+                    onPress={() => setSubscriptionType(type)}
+                  >
+                    <Text style={[
+                      styles.subscriptionButtonText,
+                      subscriptionType === type && styles.activeSubscriptionButtonText
+                    ]}>
+                      {type === 'monthly' ? 'شهري' : 
+                       type === 'quarterly' ? 'ربع سنوي' : 'سنوي'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>تاريخ البداية</Text>
+              <TextInput
+                style={styles.textInput}
+                value={startDate}
+                onChangeText={setStartDate}
+                placeholder="YYYY-MM-DD"
+              />
+            </View>
+
+            <View style={styles.dateInfo}>
+              <Text style={styles.dateInfoText}>
+                تاريخ الانتهاء: {calculateEndDate(startDate, subscriptionType)}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.approveSubmitButton}
+              onPress={handleApproveUser}
+            >
+              <Text style={styles.submitButtonText}>تفعيل الاشتراك</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -340,6 +530,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  pendingAlert: {
+    backgroundColor: '#FFF3E0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9500',
+  },
+  pendingText: {
+    color: '#FF9500',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
   controlsContainer: {
     backgroundColor: '#FFFFFF',
     padding: 16,
@@ -366,7 +573,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
   },
   filterButton: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
     backgroundColor: '#F2F2F7',
@@ -375,7 +582,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#007AFF',
   },
   filterButtonText: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#8E8E93',
     fontWeight: '600',
   },
@@ -407,6 +614,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
+  },
+  approveButton: {
+    backgroundColor: '#E8F5E8',
   },
   deleteButton: {
     backgroundColor: '#FFEBEE',
@@ -500,5 +710,52 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '600',
+  },
+  approvalUserName: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 20,
+    color: '#000',
+  },
+  subscriptionContainer: {
+    flexDirection: 'column',
+    gap: 8,
+  },
+  subscriptionButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: '#F2F2F7',
+    alignItems: 'center',
+  },
+  activeSubscriptionButton: {
+    backgroundColor: '#34C759',
+  },
+  subscriptionButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#8E8E93',
+  },
+  activeSubscriptionButtonText: {
+    color: '#FFFFFF',
+  },
+  dateInfo: {
+    backgroundColor: '#F2F2F7',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+  },
+  dateInfoText: {
+    fontSize: 16,
+    color: '#000',
+    textAlign: 'center',
+  },
+  approveSubmitButton: {
+    backgroundColor: '#34C759',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 20,
   },
 });

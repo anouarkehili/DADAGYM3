@@ -7,23 +7,31 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
-  Image,
   KeyboardAvoidingView,
   Platform,
   Linking,
+  ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import QRCodeScanner from '@/components/QRCodeScanner';
-import { QrCode, User, Lock, Camera } from 'lucide-react-native';
+import { QrCode, User, Lock, UserPlus, Phone, Mail } from 'lucide-react-native';
 
 export default function LoginScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showScanner, setShowScanner] = useState(false);
+  const [showRegister, setShowRegister] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
-  const { login, loginWithQR, user } = useAuth();
+  // Registration form states
+  const [regName, setRegName] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+  const [regConfirmPassword, setRegConfirmPassword] = useState('');
+  const [regPhone, setRegPhone] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  
+  const { login, loginWithQR, register, user } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -53,6 +61,55 @@ export default function LoginScreen() {
     }
   };
 
+  const handleRegister = async () => {
+    if (!regName.trim() || !regPassword.trim()) {
+      Alert.alert('خطأ', 'يرجى إدخال الاسم وكلمة المرور');
+      return;
+    }
+
+    if (regPassword !== regConfirmPassword) {
+      Alert.alert('خطأ', 'كلمة المرور وتأكيد كلمة المرور غير متطابقتين');
+      return;
+    }
+
+    if (regPassword.length < 6) {
+      Alert.alert('خطأ', 'كلمة المرور يجب أن تكون 6 أحرف على الأقل');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const success = await register({
+        name: regName.trim(),
+        password: regPassword.trim(),
+        phone: regPhone.trim() || undefined,
+        email: regEmail.trim() || undefined
+      });
+
+      if (success) {
+        Alert.alert(
+          'تم التسجيل بنجاح',
+          'تم إنشاء حسابك بنجاح. يرجى انتظار موافقة الإدارة لتفعيل اشتراكك.',
+          [
+            {
+              text: 'موافق',
+              onPress: () => {
+                setShowRegister(false);
+                router.replace('/(tabs)');
+              }
+            }
+          ]
+        );
+      } else {
+        Alert.alert('خطأ', 'فشل في إنشاء الحساب. يرجى المحاولة مرة أخرى.');
+      }
+    } catch (error) {
+      Alert.alert('خطأ', 'حدث خطأ أثناء إنشاء الحساب.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleQRScan = async (data: string) => {
     setShowScanner(false);
     setIsLoading(true);
@@ -73,10 +130,10 @@ export default function LoginScreen() {
 
   const handleSocialMediaPress = (platform: string) => {
     const urls = {
-      whatsapp: 'https://wa.me/966123456789', // ضع رقم الواتساب الخاص بالنادي
-      facebook: 'https://facebook.com/dadagym', // ضع رابط صفحة الفيسبوك
-      instagram: 'https://instagram.com/dadagym', // ضع رابط الانستجرام
-      tiktok: 'https://tiktok.com/@dadagym', // ضع رابط التيك توك
+      whatsapp: 'https://wa.me/966123456789',
+      facebook: 'https://facebook.com/dadagym',
+      instagram: 'https://instagram.com/dadagym',
+      tiktok: 'https://tiktok.com/@dadagym',
     };
 
     const url = urls[platform as keyof typeof urls];
@@ -87,6 +144,125 @@ export default function LoginScreen() {
     }
   };
 
+  const resetRegisterForm = () => {
+    setRegName('');
+    setRegPassword('');
+    setRegConfirmPassword('');
+    setRegPhone('');
+    setRegEmail('');
+  };
+
+  if (showRegister) {
+    return (
+      <KeyboardAvoidingView 
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView contentContainerStyle={styles.scrollContainer}>
+          <View style={styles.header}>
+            <View style={styles.logoContainer}>
+              <Text style={styles.logo}>DADA GYM</Text>
+              <Text style={styles.subtitle}>تسجيل حساب جديد</Text>
+            </View>
+          </View>
+
+          <View style={styles.loginContainer}>
+            <Text style={styles.title}>إنشاء حساب جديد</Text>
+            
+            <View style={styles.inputContainer}>
+              <View style={styles.inputWrapper}>
+                <User size={20} color="#8E8E93" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="الاسم الكامل"
+                  value={regName}
+                  onChangeText={setRegName}
+                  autoCapitalize="words"
+                  textAlign="right"
+                />
+              </View>
+
+              <View style={styles.inputWrapper}>
+                <Phone size={20} color="#8E8E93" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="رقم الهاتف (اختياري)"
+                  value={regPhone}
+                  onChangeText={setRegPhone}
+                  keyboardType="phone-pad"
+                  textAlign="right"
+                />
+              </View>
+
+              <View style={styles.inputWrapper}>
+                <Mail size={20} color="#8E8E93" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="البريد الإلكتروني (اختياري)"
+                  value={regEmail}
+                  onChangeText={setRegEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  textAlign="right"
+                />
+              </View>
+
+              <View style={styles.inputWrapper}>
+                <Lock size={20} color="#8E8E93" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="كلمة المرور"
+                  value={regPassword}
+                  onChangeText={setRegPassword}
+                  secureTextEntry
+                  textAlign="right"
+                />
+              </View>
+
+              <View style={styles.inputWrapper}>
+                <Lock size={20} color="#8E8E93" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="تأكيد كلمة المرور"
+                  value={regConfirmPassword}
+                  onChangeText={setRegConfirmPassword}
+                  secureTextEntry
+                  textAlign="right"
+                />
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.loginButton, isLoading && styles.disabledButton]}
+              onPress={handleRegister}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.loginButtonText}>إنشاء الحساب</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.switchButton}
+              onPress={() => {
+                setShowRegister(false);
+                resetRegisterForm();
+              }}
+            >
+              <Text style={styles.switchButtonText}>لديك حساب بالفعل؟ تسجيل الدخول</Text>
+            </TouchableOpacity>
+
+            <Text style={styles.noteText}>
+              ملاحظة: بعد إنشاء الحساب، يرجى انتظار موافقة الإدارة لتفعيل اشتراكك
+            </Text>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    );
+  }
+
   return (
     <KeyboardAvoidingView 
       style={styles.container}
@@ -96,52 +272,6 @@ export default function LoginScreen() {
         <View style={styles.logoContainer}>
           <Text style={styles.logo}>DADA GYM</Text>
           <Text style={styles.subtitle}>نظام إدارة النادي الرياضي</Text>
-        </View>
-        
-        {/* Social Media Links */}
-        <View style={styles.socialContainer}>
-          <Text style={styles.socialTitle}>تابعنا على</Text>
-          <View style={styles.socialButtons}>
-            <TouchableOpacity
-              style={[styles.socialButton, styles.whatsappButton]}
-              onPress={() => handleSocialMediaPress('whatsapp')}
-            >
-              <Image
-                source={{ uri: 'https://images.pexels.com/photos/147413/twitter-facebook-together-exchange-of-information-147413.jpeg?auto=compress&cs=tinysrgb&w=50&h=50&fit=crop&crop=center' }}
-                style={styles.socialIcon}
-              />
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={[styles.socialButton, styles.facebookButton]}
-              onPress={() => handleSocialMediaPress('facebook')}
-            >
-              <Image
-                source={{ uri: 'https://images.pexels.com/photos/267350/pexels-photo-267350.jpeg?auto=compress&cs=tinysrgb&w=50&h=50&fit=crop&crop=center' }}
-                style={styles.socialIcon}
-              />
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={[styles.socialButton, styles.instagramButton]}
-              onPress={() => handleSocialMediaPress('instagram')}
-            >
-              <Image
-                source={{ uri: 'https://images.pexels.com/photos/1092644/pexels-photo-1092644.jpeg?auto=compress&cs=tinysrgb&w=50&h=50&fit=crop&crop=center' }}
-                style={styles.socialIcon}
-              />
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={[styles.socialButton, styles.tiktokButton]}
-              onPress={() => handleSocialMediaPress('tiktok')}
-            >
-              <Image
-                source={{ uri: 'https://images.pexels.com/photos/1591056/pexels-photo-1591056.jpeg?auto=compress&cs=tinysrgb&w=50&h=50&fit=crop&crop=center' }}
-                style={styles.socialIcon}
-              />
-            </TouchableOpacity>
-          </View>
         </View>
       </View>
 
@@ -200,6 +330,15 @@ export default function LoginScreen() {
           <QrCode size={24} color="#007AFF" />
           <Text style={styles.qrButtonText}>تسجيل الدخول بـ QR</Text>
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.registerButton}
+          onPress={() => setShowRegister(true)}
+          disabled={isLoading}
+        >
+          <UserPlus size={24} color="#34C759" />
+          <Text style={styles.registerButtonText}>إنشاء حساب جديد</Text>
+        </TouchableOpacity>
       </View>
 
       <QRCodeScanner
@@ -215,6 +354,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8F9FA',
+  },
+  scrollContainer: {
+    flexGrow: 1,
   },
   header: {
     alignItems: 'center',
@@ -242,49 +384,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     textAlign: 'center',
     opacity: 0.9,
-  },
-  socialContainer: {
-    alignItems: 'center',
-  },
-  socialTitle: {
-    fontSize: 14,
-    color: '#FFFFFF',
-    marginBottom: 12,
-    opacity: 0.8,
-  },
-  socialButtons: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 12,
-  },
-  socialButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  whatsappButton: {
-    backgroundColor: '#25D366',
-  },
-  facebookButton: {
-    backgroundColor: '#1877F2',
-  },
-  instagramButton: {
-    backgroundColor: '#E4405F',
-  },
-  tiktokButton: {
-    backgroundColor: '#000000',
-  },
-  socialIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
   },
   loginContainer: {
     flex: 1,
@@ -379,11 +478,44 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     height: 54,
     backgroundColor: 'rgba(0, 122, 255, 0.05)',
+    marginBottom: 16,
   },
   qrButtonText: {
     color: '#007AFF',
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,
+  },
+  registerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#34C759',
+    borderRadius: 16,
+    height: 54,
+    backgroundColor: 'rgba(52, 199, 89, 0.05)',
+  },
+  registerButtonText: {
+    color: '#34C759',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  switchButton: {
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  switchButtonText: {
+    color: '#007AFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  noteText: {
+    fontSize: 14,
+    color: '#8E8E93',
+    textAlign: 'center',
+    marginTop: 16,
+    lineHeight: 20,
   },
 });

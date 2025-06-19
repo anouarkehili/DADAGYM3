@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { GymContextType, User, Subscription, Attendance } from '@/types';
-import { GoogleSheetsService } from '@/services/googleSheets';
+import { FirebaseService } from '@/services/firebaseService';
 import StorageService from '@/services/storage';
-import { generateUniqueId, formatDate, formatTime } from '@/utils/qrCode';
+import { generateUniqueId, formatDate, formatTime, generateQRData } from '@/utils/qrCode';
 
 const GymContext = createContext<GymContextType | undefined>(undefined);
 
@@ -22,11 +22,28 @@ export const GymProvider: React.FC<GymProviderProps> = ({ children }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [attendance, setAttendance] = useState<Attendance[]>([]);
+  const [pendingUsers, setPendingUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     loadCachedData();
     refreshData();
+    
+    // Set up real-time listeners
+    const unsubscribeUsers = FirebaseService.subscribeToUsers((users) => {
+      setUsers(users);
+      StorageService.setItem('users', users);
+    });
+
+    const unsubscribeAttendance = FirebaseService.subscribeToAttendance((attendance) => {
+      setAttendance(attendance);
+      StorageService.setItem('attendance', attendance);
+    });
+
+    return () => {
+      unsubscribeUsers();
+      unsubscribeAttendance();
+    };
   }, []);
 
   const loadCachedData = async () => {
@@ -46,26 +63,24 @@ export const GymProvider: React.FC<GymProviderProps> = ({ children }) => {
   const refreshData = async () => {
     setLoading(true);
     try {
-      const [usersResponse, subsResponse, attendanceResponse] = await Promise.all([
-        GoogleSheetsService.getUsers(),
-        GoogleSheetsService.getSubscriptions(),
-        GoogleSheetsService.getAttendance()
+      const [usersData, subsData, attendanceData, pendingData] = await Promise.all([
+        FirebaseService.getUsers(),
+        FirebaseService.getSubscriptions(),
+        FirebaseService.getAttendance(),
+        FirebaseService.getPendingUsers()
       ]);
 
-      if (usersResponse.success) {
-        setUsers(usersResponse.data || []);
-        await StorageService.setItem('users', usersResponse.data || []);
-      }
+      setUsers(usersData);
+      setSubscriptions(subsData);
+      setAttendance(attendanceData);
+      setPendingUsers(pendingData);
 
-      if (subsResponse.success) {
-        setSubscriptions(subsResponse.data || []);
-        await StorageService.setItem('subscriptions', subsResponse.data || []);
-      }
-
-      if (attendanceResponse.success) {
-        setAttendance(attendanceResponse.data || []);
-        await StorageService.setItem('attendance', attendanceResponse.data || []);
-      }
+      // Cache data
+      await Promise.all([
+        StorageService.setItem('users', usersData),
+        StorageService.setItem('subscriptions', subsData),
+        StorageService.setItem('attendance', attendanceData)
+      ]);
     } catch (error) {
       console.error('Error refreshing data:', error);
     } finally {
@@ -74,21 +89,17 @@ export const GymProvider: React.FC<GymProviderProps> = ({ children }) => {
   };
 
   const addUser = async (userData: Omit<User, 'id' | 'createdAt'>) => {
-    const newUser: User = {
-      ...userData,
-      id: generateUniqueId(),
-      createdAt: new Date().toISOString()
-    };
-
     try {
-      const response = await GoogleSheetsService.addUser(newUser);
-      if (response.success) {
-        const updatedUsers = [...users, newUser];
-        setUsers(updatedUsers);
-        await StorageService.setItem('users', updatedUsers);
-      } else {
-        throw new Error(response.error || 'Failed to add user');
-      }
+      const userId = await FirebaseService.addUser({
+        ...userData,
+        createdAt: new Date().toISOString()
+      });
+
+      // Generate QR code
+      const qrCode = generateQRData({ ...userData, id: userId });
+      await FirebaseService.updateUser(userId, { qrCode });
+
+      await refreshData();
     } catch (error) {
       console.error('Error adding user:', error);
       throw error;
@@ -97,16 +108,8 @@ export const GymProvider: React.FC<GymProviderProps> = ({ children }) => {
 
   const updateUser = async (userId: string, updates: Partial<User>) => {
     try {
-      const response = await GoogleSheetsService.updateUser(userId, updates);
-      if (response.success) {
-        const updatedUsers = users.map(user =>
-          user.id === userId ? { ...user, ...updates } : user
-        );
-        setUsers(updatedUsers);
-        await StorageService.setItem('users', updatedUsers);
-      } else {
-        throw new Error(response.error || 'Failed to update user');
-      }
+      await FirebaseService.updateUser(userId, updates);
+      await refreshData();
     } catch (error) {
       console.error('Error updating user:', error);
       throw error;
@@ -115,14 +118,8 @@ export const GymProvider: React.FC<GymProviderProps> = ({ children }) => {
 
   const deleteUser = async (userId: string) => {
     try {
-      const response = await GoogleSheetsService.deleteUser(userId);
-      if (response.success) {
-        const updatedUsers = users.filter(user => user.id !== userId);
-        setUsers(updatedUsers);
-        await StorageService.setItem('users', updatedUsers);
-      } else {
-        throw new Error(response.error || 'Failed to delete user');
-      }
+      await FirebaseService.deleteUser(userId);
+      await refreshData();
     } catch (error) {
       console.error('Error deleting user:', error);
       throw error;
@@ -130,39 +127,17 @@ export const GymProvider: React.FC<GymProviderProps> = ({ children }) => {
   };
 
   const recordAttendance = async (userId: string, type: 'check-in' | 'check-out') => {
-    const attendanceRecord: Attendance = {
-      id: generateUniqueId(),
-      userId,
-      date: formatDate(new Date()),
-      time: formatTime(new Date()),
-      type,
-      synced: false
-    };
-
     try {
-      // Add to local state immediately
-      const updatedAttendance = [...attendance, attendanceRecord];
-      setAttendance(updatedAttendance);
-      await StorageService.setItem('attendance', updatedAttendance);
-
-      // Try to sync with server
-      const response = await GoogleSheetsService.recordAttendance({
-        ...attendanceRecord,
+      await FirebaseService.recordAttendance({
+        userId,
+        date: formatDate(new Date()),
+        time: formatTime(new Date()),
+        type,
         synced: true
       });
-
-      if (response.success) {
-        // Mark as synced
-        attendanceRecord.synced = true;
-        const syncedAttendance = updatedAttendance.map(record =>
-          record.id === attendanceRecord.id ? { ...record, synced: true } : record
-        );
-        setAttendance(syncedAttendance);
-        await StorageService.setItem('attendance', syncedAttendance);
-      }
     } catch (error) {
       console.error('Error recording attendance:', error);
-      // Keep the record locally for later sync
+      throw error;
     }
   };
 
@@ -180,33 +155,50 @@ export const GymProvider: React.FC<GymProviderProps> = ({ children }) => {
     return filtered.sort((a, b) => new Date(`${b.date} ${b.time}`).getTime() - new Date(`${a.date} ${a.time}`).getTime());
   };
 
-  const syncOfflineData = async () => {
+  const approveUser = async (userId: string, subscriptionData: {
+    type: 'monthly' | 'quarterly' | 'yearly';
+    startDate: string;
+    endDate: string;
+  }) => {
     try {
-      const unsyncedRecords = attendance.filter(record => !record.synced);
-      
-      if (unsyncedRecords.length > 0) {
-        const response = await GoogleSheetsService.batchCreateAttendance(unsyncedRecords);
-        
-        if (response.success) {
-          const syncedAttendance = attendance.map(record => ({ ...record, synced: true }));
-          setAttendance(syncedAttendance);
-          await StorageService.setItem('attendance', syncedAttendance);
-        }
-      }
+      await FirebaseService.approveUser(userId, {
+        ...subscriptionData,
+        status: 'active'
+      });
+      await refreshData();
     } catch (error) {
-      console.error('Error syncing offline data:', error);
+      console.error('Error approving user:', error);
+      throw error;
     }
+  };
+
+  const addSubscription = async (subscriptionData: Omit<Subscription, 'id'>) => {
+    try {
+      await FirebaseService.addSubscription(subscriptionData);
+      await refreshData();
+    } catch (error) {
+      console.error('Error adding subscription:', error);
+      throw error;
+    }
+  };
+
+  const syncOfflineData = async () => {
+    // Firebase handles real-time sync automatically
+    await refreshData();
   };
 
   const value: GymContextType = {
     users,
     subscriptions,
     attendance,
+    pendingUsers,
     addUser,
     updateUser,
     deleteUser,
     recordAttendance,
     getAttendanceHistory,
+    approveUser,
+    addSubscription,
     syncOfflineData,
     refreshData,
     loading

@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { AuthContextType, User } from '@/types';
-import { GoogleSheetsService } from '@/services/googleSheets';
+import { FirebaseService } from '@/services/firebaseService';
 import StorageService from '@/services/storage';
-import { parseQRData } from '@/utils/qrCode';
+import { parseQRData, generateQRData } from '@/utils/qrCode';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -42,21 +42,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const login = async (username: string, password: string): Promise<boolean> => {
     setLoading(true);
     try {
-      const response = await GoogleSheetsService.getUserByCredentials(username, password);
-      if (response.success && response.data && response.data.length > 0) {
-        const userData = response.data[0];
-        const user: User = {
-          id: userData.id,
-          name: userData.name,
-          role: userData.role,
-          password: userData.password,
-          qrCode: userData.qrCode,
-          subscriptionStatus: userData.subscriptionStatus,
-          createdAt: userData.createdAt
-        };
-        
-        setUser(user);
-        await StorageService.setItem('currentUser', user);
+      const userData = await FirebaseService.getUserByCredentials(username, password);
+      if (userData) {
+        setUser(userData);
+        await StorageService.setItem('currentUser', userData);
         return true;
       }
       return false;
@@ -76,26 +65,53 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return false;
       }
 
-      const response = await GoogleSheetsService.getUserByQR(qrData);
-      if (response.success && response.data && response.data.length > 0) {
-        const userData = response.data[0];
-        const user: User = {
-          id: userData.id,
-          name: userData.name,
-          role: userData.role,
-          password: userData.password,
-          qrCode: userData.qrCode,
-          subscriptionStatus: userData.subscriptionStatus,
-          createdAt: userData.createdAt
-        };
-        
-        setUser(user);
-        await StorageService.setItem('currentUser', user);
+      const userData = await FirebaseService.getUserByQR(qrData);
+      if (userData) {
+        setUser(userData);
+        await StorageService.setItem('currentUser', userData);
         return true;
       }
       return false;
     } catch (error) {
       console.error('QR login error:', error);
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const register = async (userData: {
+    name: string;
+    password: string;
+    phone?: string;
+    email?: string;
+  }): Promise<boolean> => {
+    setLoading(true);
+    try {
+      const newUser: Omit<User, 'id'> = {
+        name: userData.name,
+        password: userData.password,
+        role: 'member',
+        qrCode: '', // Will be generated after user creation
+        subscriptionStatus: 'pending',
+        createdAt: new Date().toISOString(),
+        phone: userData.phone,
+        email: userData.email
+      };
+
+      const userId = await FirebaseService.addUser(newUser);
+      
+      // Generate QR code with user ID
+      const qrCode = generateQRData({ ...newUser, id: userId });
+      await FirebaseService.updateUser(userId, { qrCode });
+
+      const createdUser = { ...newUser, id: userId, qrCode };
+      setUser(createdUser);
+      await StorageService.setItem('currentUser', createdUser);
+      
+      return true;
+    } catch (error) {
+      console.error('Registration error:', error);
       return false;
     } finally {
       setLoading(false);
@@ -111,6 +127,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     user,
     login,
     loginWithQR,
+    register,
     logout,
     loading
   };
