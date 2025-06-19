@@ -1,0 +1,53 @@
+{
+  "name": "dada-gym-app",
+  "main": "expo-router/entry",
+  "version": "1.0.0",
+  "private": true,
+"scripts": {
+  "dev": "expo start",
+  "build:web": "expo export --platform web",
+  "lint": "expo lint"
+},
+  "dependencies": {
+    "@expo-google-fonts/inter": "*",
+    "@expo-google-fonts/noto-sans": "*",
+    "@expo/vector-icons": "*",
+    "@lucide/lab": "*",
+    "@react-navigation/bottom-tabs": "*",
+    "@react-navigation/native": "*",
+    "@react-native-async-storage/async-storage": "*",
+    "expo": "*",
+    "expo-blur": "*",
+    "expo-camera": "*",
+    "expo-constants": "*",
+    "expo-font": "*",
+    "expo-haptics": "*",
+    "expo-linear-gradient": "*",
+    "expo-linking": "*",
+    "expo-router": "*",
+    "expo-secure-store": "*",
+    "expo-splash-screen": "*",
+    "expo-status-bar": "*",
+    "expo-symbols": "*",
+    "expo-system-ui": "*",
+    "expo-web-browser": "*",
+    "lucide-react-native": "*",
+    "react": "*",
+    "react-dom": "*",
+    "react-native": "*",
+    "react-native-gesture-handler": "*",
+    "react-native-qrcode-svg": "*",
+    "react-native-reanimated": "*",
+    "react-native-safe-area-context": "*",
+    "react-native-screens": "*",
+    "react-native-svg": "*",
+    "react-native-url-polyfill": "*",
+    "react-native-web": "*",
+    "react-native-webview": "*"
+  },
+  "devDependencies": {
+    "@babel/core": "*",
+    "@types/react": "*",
+    "typescript": "*"
+  }
+}
