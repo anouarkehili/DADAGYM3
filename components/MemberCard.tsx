@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { User, Subscription } from '@/types';
 import { isSubscriptionActive, getDaysUntilExpiry } from '@/utils/qrCode';
-import { User as UserIcon, Calendar, Clock, AlertCircle } from 'lucide-react-native';
+import { User as UserIcon, Calendar, Clock, CircleAlert as AlertCircle } from 'lucide-react-native';
 
 interface MemberCardProps {
   user: User;
