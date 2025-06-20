@@ -13,18 +13,7 @@ import { useGym } from '@/contexts/GymContext';
 import QRCodeDisplay from '@/components/QRCodeDisplay';
 import QRCodeScanner from '@/components/QRCodeScanner';
 import { generateQRData, formatDateTime } from '@/utils/qrCode';
-import { 
-  QrCode, 
-  Clock, 
-  Users, 
-  Calendar,
-  TrendingUp,
-  Wifi,
-  WifiOff,
-  ScanLine,
-  CheckCircle,
-  XCircle
-} from 'lucide-react-native';
+import { QrCode, Clock, Users, Calendar, TrendingUp, Wifi, WifiOff, ScanLine, CircleCheck as CheckCircle, Circle as XCircle } from 'lucide-react-native';
 
 export default function HomeScreen() {
   const { user } = useAuth();
