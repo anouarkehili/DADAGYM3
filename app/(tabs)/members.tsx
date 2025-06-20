@@ -15,20 +15,7 @@ import { useGym } from '@/contexts/GymContext';
 import MemberCard from '@/components/MemberCard';
 import { User } from '@/types';
 import { generateUniqueId, generateQRData } from '@/utils/qrCode';
-import { 
-  Plus, 
-  Search, 
-  Filter, 
-  UserCheck, 
-  UserX, 
-  Edit, 
-  Trash2, 
-  Clock, 
-  CheckCircle,
-  Users as UsersIcon,
-  UserPlus,
-  Settings as SettingsIcon
-} from 'lucide-react-native';
+import { Plus, Search, Filter, UserCheck, UserX, CreditCard as Edit, Trash2, Clock, CircleCheck as CheckCircle, Users as UsersIcon, UserPlus, Settings as SettingsIcon } from 'lucide-react-native';
 
 export default function MembersScreen() {
   const { user } = useAuth();

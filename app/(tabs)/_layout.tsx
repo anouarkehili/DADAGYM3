@@ -1,12 +1,6 @@
 import { Tabs } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
-import { 
-  Home,
-  Users,
-  BarChart3,
-  User,
-  Settings
-} from 'lucide-react-native';
+import { Chrome as Home, Users, ChartBar as BarChart3, User, Settings } from 'lucide-react-native';
 
 export default function TabLayout() {
   const { user } = useAuth();
