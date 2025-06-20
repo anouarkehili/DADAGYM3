@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { GymContextType, User, Subscription, Attendance } from '@/types';
-import { FirebaseService } from '@/services/firebaseService';
+import { GoogleSheetsService } from '@/services/googleSheets';
 import StorageService from '@/services/storage';
 import { generateUniqueId, formatDate, formatTime, generateQRData } from '@/utils/qrCode';
 
@@ -28,22 +28,6 @@ export const GymProvider: React.FC<GymProviderProps> = ({ children }) => {
   useEffect(() => {
     loadCachedData();
     refreshData();
-    
-    // Set up real-time listeners
-    const unsubscribeUsers = FirebaseService.subscribeToUsers((users) => {
-      setUsers(users);
-      StorageService.setItem('users', users);
-    });
-
-    const unsubscribeAttendance = FirebaseService.subscribeToAttendance((attendance) => {
-      setAttendance(attendance);
-      StorageService.setItem('attendance', attendance);
-    });
-
-    return () => {
-      unsubscribeUsers();
-      unsubscribeAttendance();
-    };
   }, []);
 
   const loadCachedData = async () => {
@@ -64,10 +48,10 @@ export const GymProvider: React.FC<GymProviderProps> = ({ children }) => {
     setLoading(true);
     try {
       const [usersData, subsData, attendanceData, pendingData] = await Promise.all([
-        FirebaseService.getUsers(),
-        FirebaseService.getSubscriptions(),
-        FirebaseService.getAttendance(),
-        FirebaseService.getPendingUsers()
+        GoogleSheetsService.getUsers(),
+        GoogleSheetsService.getSubscriptions(),
+        GoogleSheetsService.getAttendance(),
+        GoogleSheetsService.getPendingUsers()
       ]);
 
       setUsers(usersData);
@@ -83,6 +67,8 @@ export const GymProvider: React.FC<GymProviderProps> = ({ children }) => {
       ]);
     } catch (error) {
       console.error('Error refreshing data:', error);
+      // If online fetch fails, try to use cached data
+      await loadCachedData();
     } finally {
       setLoading(false);
     }
@@ -90,54 +76,101 @@ export const GymProvider: React.FC<GymProviderProps> = ({ children }) => {
 
   const addUser = async (userData: Omit<User, 'id' | 'createdAt'>) => {
     try {
-      const userId = await FirebaseService.addUser({
+      const userId = await GoogleSheetsService.addUser({
         ...userData,
         createdAt: new Date().toISOString()
       });
 
       // Generate QR code
       const qrCode = generateQRData({ ...userData, id: userId });
-      await FirebaseService.updateUser(userId, { qrCode });
+      await GoogleSheetsService.updateUser(userId, { qrCode });
 
       await refreshData();
     } catch (error) {
       console.error('Error adding user:', error);
+      
+      // Fallback to local storage if online fails
+      const localUser: User = {
+        ...userData,
+        id: generateUniqueId(),
+        createdAt: new Date().toISOString(),
+        qrCode: generateQRData({ ...userData, id: generateUniqueId() })
+      };
+      
+      const updatedUsers = [...users, localUser];
+      setUsers(updatedUsers);
+      await StorageService.setItem('users', updatedUsers);
+      
       throw error;
     }
   };
 
   const updateUser = async (userId: string, updates: Partial<User>) => {
     try {
-      await FirebaseService.updateUser(userId, updates);
+      await GoogleSheetsService.updateUser(userId, updates);
       await refreshData();
     } catch (error) {
       console.error('Error updating user:', error);
+      
+      // Fallback to local update
+      const updatedUsers = users.map(user => 
+        user.id === userId ? { ...user, ...updates } : user
+      );
+      setUsers(updatedUsers);
+      await StorageService.setItem('users', updatedUsers);
+      
       throw error;
     }
   };
 
   const deleteUser = async (userId: string) => {
     try {
-      await FirebaseService.deleteUser(userId);
+      await GoogleSheetsService.deleteUser(userId);
       await refreshData();
     } catch (error) {
       console.error('Error deleting user:', error);
+      
+      // Fallback to local deletion
+      const updatedUsers = users.filter(user => user.id !== userId);
+      setUsers(updatedUsers);
+      await StorageService.setItem('users', updatedUsers);
+      
       throw error;
     }
   };
 
   const recordAttendance = async (userId: string, type: 'check-in' | 'check-out') => {
+    const attendanceRecord: Attendance = {
+      id: generateUniqueId(),
+      userId,
+      date: formatDate(new Date()),
+      time: formatTime(new Date()),
+      type,
+      synced: false
+    };
+
     try {
-      await FirebaseService.recordAttendance({
-        userId,
-        date: formatDate(new Date()),
-        time: formatTime(new Date()),
-        type,
+      // Add to local state immediately for better UX
+      const updatedAttendance = [attendanceRecord, ...attendance];
+      setAttendance(updatedAttendance);
+      await StorageService.setItem('attendance', updatedAttendance);
+
+      // Try to sync with Google Sheets
+      await GoogleSheetsService.recordAttendance({
+        ...attendanceRecord,
         synced: true
       });
+
+      // Update local record as synced
+      const syncedAttendance = updatedAttendance.map(record =>
+        record.id === attendanceRecord.id ? { ...record, synced: true } : record
+      );
+      setAttendance(syncedAttendance);
+      await StorageService.setItem('attendance', syncedAttendance);
+
     } catch (error) {
       console.error('Error recording attendance:', error);
-      throw error;
+      // Keep the local record as unsynced
     }
   };
 
@@ -161,7 +194,7 @@ export const GymProvider: React.FC<GymProviderProps> = ({ children }) => {
     endDate: string;
   }) => {
     try {
-      await FirebaseService.approveUser(userId, {
+      await GoogleSheetsService.approveUser(userId, {
         ...subscriptionData,
         status: 'active'
       });
@@ -174,7 +207,7 @@ export const GymProvider: React.FC<GymProviderProps> = ({ children }) => {
 
   const addSubscription = async (subscriptionData: Omit<Subscription, 'id'>) => {
     try {
-      await FirebaseService.addSubscription(subscriptionData);
+      await GoogleSheetsService.addSubscription(subscriptionData);
       await refreshData();
     } catch (error) {
       console.error('Error adding subscription:', error);
@@ -183,8 +216,25 @@ export const GymProvider: React.FC<GymProviderProps> = ({ children }) => {
   };
 
   const syncOfflineData = async () => {
-    // Firebase handles real-time sync automatically
-    await refreshData();
+    try {
+      const unsyncedAttendance = attendance.filter(record => !record.synced);
+      
+      for (const record of unsyncedAttendance) {
+        try {
+          await GoogleSheetsService.recordAttendance({
+            ...record,
+            synced: true
+          });
+        } catch (error) {
+          console.error('Error syncing attendance record:', record.id, error);
+        }
+      }
+
+      await refreshData();
+    } catch (error) {
+      console.error('Error syncing offline data:', error);
+      throw error;
+    }
   };
 
   const value: GymContextType = {

@@ -9,6 +9,14 @@ export const generateQRData = (user: User): string => {
   });
 };
 
+export const generateGymQRData = (): string => {
+  return JSON.stringify({
+    type: 'gym_checkin',
+    gym: 'DADA GYM',
+    timestamp: Date.now()
+  });
+};
+
 export const parseQRData = (qrData: string): { id: string; name: string; role: string; timestamp: number } | null => {
   try {
     const parsed = JSON.parse(qrData);
@@ -56,4 +64,56 @@ export const getDaysUntilExpiry = (endDate: string): number => {
   const subscriptionEnd = new Date(endDate);
   const diffTime = subscriptionEnd.getTime() - today.getTime();
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+};
+
+export const generateAdminCredentials = (name: string): { username: string; password: string } => {
+  const username = name.replace(/\s+/g, '').toLowerCase();
+  const password = `admin_${Math.random().toString(36).substr(2, 8)}`;
+  return { username, password };
+};
+
+export const validateSubscriptionDates = (startDate: string, endDate: string): boolean => {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  return end > start;
+};
+
+export const calculateSubscriptionPrice = (type: 'monthly' | 'quarterly' | 'yearly'): number => {
+  const prices = {
+    monthly: 200,
+    quarterly: 550,
+    yearly: 2000
+  };
+  return prices[type];
+};
+
+export const formatCurrency = (amount: number): string => {
+  return `${amount} ريال`;
+};
+
+export const getSubscriptionTypeLabel = (type: 'monthly' | 'quarterly' | 'yearly'): string => {
+  const labels = {
+    monthly: 'شهري',
+    quarterly: 'ربع سنوي',
+    yearly: 'سنوي'
+  };
+  return labels[type];
+};
+
+export const getStatusColor = (status: 'active' | 'expired' | 'pending'): string => {
+  const colors = {
+    active: '#34C759',
+    expired: '#FF3B30',
+    pending: '#FF9500'
+  };
+  return colors[status];
+};
+
+export const getStatusLabel = (status: 'active' | 'expired' | 'pending'): string => {
+  const labels = {
+    active: 'نشط',
+    expired: 'منتهي',
+    pending: 'معلق'
+  };
+  return labels[status];
 };

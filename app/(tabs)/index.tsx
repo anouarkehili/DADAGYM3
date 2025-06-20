@@ -20,7 +20,10 @@ import {
   Calendar,
   TrendingUp,
   Wifi,
-  WifiOff
+  WifiOff,
+  ScanLine,
+  CheckCircle,
+  XCircle
 } from 'lucide-react-native';
 
 export default function HomeScreen() {
@@ -61,14 +64,37 @@ export default function HomeScreen() {
     
     try {
       const qrData = JSON.parse(data);
-      if (qrData.id && qrData.name) {
-        await recordAttendance(qrData.id, 'check-in');
-        Alert.alert('تم بنجاح', `تم تسجيل حضور ${qrData.name}`);
+      
+      if (user?.role === 'admin') {
+        // Admin scanning member QR for attendance
+        if (qrData.id && qrData.name) {
+          await recordAttendance(qrData.id, 'check-in');
+          Alert.alert('تم بنجاح', `تم تسجيل حضور ${qrData.name}`);
+        } else {
+          Alert.alert('خطأ', 'رمز QR غير صالح');
+        }
       } else {
-        Alert.alert('خطأ', 'رمز QR غير صالح');
+        // Member scanning gym QR for self check-in
+        if (qrData.type === 'gym_checkin' && user) {
+          await recordAttendance(user.id, 'check-in');
+          Alert.alert('تم بنجاح', 'تم تسجيل حضورك بنجاح');
+        } else {
+          Alert.alert('خطأ', 'رمز QR غير صالح للحضور');
+        }
       }
     } catch (error) {
       Alert.alert('خطأ', 'لا يمكن قراءة رمز QR');
+    }
+  };
+
+  const handleSelfCheckout = async () => {
+    if (!user) return;
+    
+    try {
+      await recordAttendance(user.id, 'check-out');
+      Alert.alert('تم بنجاح', 'تم تسجيل خروجك بنجاح');
+    } catch (error) {
+      Alert.alert('خطأ', 'فشل في تسجيل الخروج');
     }
   };
 
@@ -87,6 +113,13 @@ export default function HomeScreen() {
   const unsyncedCount = attendance.filter(record => !record.synced).length;
 
   const isAdmin = user?.role === 'admin';
+  const isActiveUser = user?.subscriptionStatus === 'active';
+
+  // Check if user has checked in today
+  const todayDate = new Date().toISOString().split('T')[0];
+  const todayUserAttendance = user ? getAttendanceHistory(user.id, todayDate) : [];
+  const hasCheckedInToday = todayUserAttendance.some(record => record.type === 'check-in');
+  const hasCheckedOutToday = todayUserAttendance.some(record => record.type === 'check-out');
 
   return (
     <ScrollView 
@@ -103,6 +136,25 @@ export default function HomeScreen() {
         <Text style={styles.subtitle}>
           {user?.name} - DADA GYM
         </Text>
+        
+        {/* Subscription Status for Members */}
+        {!isAdmin && (
+          <View style={styles.statusContainer}>
+            {isActiveUser ? (
+              <View style={styles.activeStatus}>
+                <CheckCircle size={16} color="#34C759" />
+                <Text style={styles.activeText}>اشتراك نشط</Text>
+              </View>
+            ) : (
+              <View style={styles.inactiveStatus}>
+                <XCircle size={16} color="#FF3B30" />
+                <Text style={styles.inactiveText}>
+                  {user?.subscriptionStatus === 'pending' ? 'في انتظار التفعيل' : 'اشتراك منتهي'}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
         
         {/* Online Status */}
         <View style={styles.statusContainer}>
@@ -182,15 +234,59 @@ export default function HomeScreen() {
             <Text style={styles.actionButtonText}>مسح QR للحضور</Text>
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => setShowQRCode(true)}
-          >
-            <QrCode size={24} color="#007AFF" />
-            <Text style={styles.actionButtonText}>عرض رمز QR الخاص بي</Text>
-          </TouchableOpacity>
+          <View style={styles.memberActions}>
+            {/* Show QR Code */}
+            <TouchableOpacity
+              style={[styles.actionButton, !isActiveUser && styles.disabledButton]}
+              onPress={() => setShowQRCode(true)}
+              disabled={!isActiveUser}
+            >
+              <QrCode size={24} color={isActiveUser ? "#007AFF" : "#8E8E93"} />
+              <Text style={[styles.actionButtonText, !isActiveUser && styles.disabledText]}>
+                عرض رمز QR الخاص بي
+              </Text>
+            </TouchableOpacity>
+
+            {/* Self Check-in Scanner */}
+            <TouchableOpacity
+              style={[styles.actionButton, styles.scanButton, !isActiveUser && styles.disabledButton]}
+              onPress={() => setShowScanner(true)}
+              disabled={!isActiveUser}
+            >
+              <ScanLine size={24} color={isActiveUser ? "#34C759" : "#8E8E93"} />
+              <Text style={[styles.actionButtonText, styles.scanButtonText, !isActiveUser && styles.disabledText]}>
+                مسح QR للحضور الذاتي
+              </Text>
+            </TouchableOpacity>
+
+            {/* Self Checkout */}
+            {hasCheckedInToday && !hasCheckedOutToday && (
+              <TouchableOpacity
+                style={[styles.actionButton, styles.checkoutButton]}
+                onPress={handleSelfCheckout}
+              >
+                <Clock size={24} color="#FF9500" />
+                <Text style={[styles.actionButtonText, styles.checkoutButtonText]}>
+                  تسجيل خروج
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
         )}
       </View>
+
+      {/* Inactive Account Warning */}
+      {!isAdmin && !isActiveUser && (
+        <View style={styles.warningContainer}>
+          <Text style={styles.warningTitle}>حسابك غير مفعل</Text>
+          <Text style={styles.warningText}>
+            {user?.subscriptionStatus === 'pending' 
+              ? 'يرجى انتظار موافقة الإدارة لتفعيل اشتراكك'
+              : 'يرجى تجديد اشتراكك للاستمرار في استخدام الخدمات'
+            }
+          </Text>
+        </View>
+      )}
 
       {/* Recent Activity */}
       <View style={styles.activityContainer}>
@@ -280,6 +376,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 12,
   },
+  activeStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(52, 199, 89, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  inactiveStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 59, 48, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
   onlineStatus: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -295,6 +407,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
+  },
+  activeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    marginLeft: 6,
+    fontWeight: '600',
+  },
+  inactiveText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    marginLeft: 6,
+    fontWeight: '600',
   },
   onlineText: {
     color: '#FFFFFF',
@@ -374,6 +498,9 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     color: '#000',
   },
+  memberActions: {
+    gap: 12,
+  },
   actionButton: {
     backgroundColor: '#FFFFFF',
     flexDirection: 'row',
@@ -386,11 +513,49 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
+  scanButton: {
+    backgroundColor: '#E8F5E8',
+  },
+  checkoutButton: {
+    backgroundColor: '#FFF3E0',
+  },
+  disabledButton: {
+    backgroundColor: '#F2F2F7',
+    opacity: 0.6,
+  },
   actionButtonText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#007AFF',
     marginLeft: 12,
+  },
+  scanButtonText: {
+    color: '#34C759',
+  },
+  checkoutButtonText: {
+    color: '#FF9500',
+  },
+  disabledText: {
+    color: '#8E8E93',
+  },
+  warningContainer: {
+    backgroundColor: '#FFF3E0',
+    margin: 20,
+    padding: 20,
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9500',
+  },
+  warningTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FF9500',
+    marginBottom: 8,
+  },
+  warningText: {
+    fontSize: 14,
+    color: '#8E8E93',
+    lineHeight: 20,
   },
   activityContainer: {
     margin: 20,

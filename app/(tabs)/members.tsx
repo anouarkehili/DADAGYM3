@@ -8,13 +8,27 @@ import {
   TextInput,
   Alert,
   Modal,
+  ScrollView,
 } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGym } from '@/contexts/GymContext';
 import MemberCard from '@/components/MemberCard';
 import { User } from '@/types';
 import { generateUniqueId, generateQRData } from '@/utils/qrCode';
-import { Plus, Search, Filter, UserCheck, UserX, CreditCard as Edit, Trash2, Clock, CircleCheck as CheckCircle } from 'lucide-react-native';
+import { 
+  Plus, 
+  Search, 
+  Filter, 
+  UserCheck, 
+  UserX, 
+  Edit, 
+  Trash2, 
+  Clock, 
+  CheckCircle,
+  Users as UsersIcon,
+  UserPlus,
+  Settings as SettingsIcon
+} from 'lucide-react-native';
 
 export default function MembersScreen() {
   const { user } = useAuth();
@@ -32,8 +46,10 @@ export default function MembersScreen() {
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'expired' | 'pending'>('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showApprovalModal, setShowApprovalModal] = useState(false);
+  const [showBulkActionsModal, setShowBulkActionsModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [approvingUser, setApprovingUser] = useState<User | null>(null);
+  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   
   // Form states
   const [formName, setFormName] = useState('');
@@ -57,7 +73,9 @@ export default function MembersScreen() {
   const allUsers = [...users, ...pendingUsers];
   
   const filteredUsers = allUsers.filter(u => {
-    const matchesSearch = u.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         (u.phone && u.phone.includes(searchQuery)) ||
+                         (u.email && u.email.toLowerCase().includes(searchQuery.toLowerCase()));
     const userSubscription = subscriptions.find(s => s.userId === u.id);
     
     let matchesFilter = true;
@@ -105,7 +123,7 @@ export default function MembersScreen() {
         email: formEmail.trim() || undefined,
         role: formRole,
         qrCode: '', // Will be generated after creating user
-        subscriptionStatus: 'pending'
+        subscriptionStatus: formRole === 'admin' ? 'active' : 'pending'
       };
 
       await addUser(newUser);
@@ -114,9 +132,9 @@ export default function MembersScreen() {
       resetForm();
       setShowAddModal(false);
       
-      Alert.alert('تم بنجاح', 'تم إضافة العضو الجديد');
+      Alert.alert('تم بنجاح', `تم إضافة ${formRole === 'admin' ? 'المدير' : 'العضو'} الجديد`);
     } catch (error) {
-      Alert.alert('خطأ', 'فشل في إضافة العضو');
+      Alert.alert('خطأ', 'فشل في إضافة المستخدم');
     }
   };
 
@@ -139,9 +157,9 @@ export default function MembersScreen() {
       setEditingUser(null);
       setShowAddModal(false);
       
-      Alert.alert('تم بنجاح', 'تم تحديث بيانات العضو');
+      Alert.alert('تم بنجاح', 'تم تحديث بيانات المستخدم');
     } catch (error) {
-      Alert.alert('خطأ', 'فشل في تحديث بيانات العضو');
+      Alert.alert('خطأ', 'فشل في تحديث بيانات المستخدم');
     }
   };
 
@@ -168,7 +186,7 @@ export default function MembersScreen() {
   const handleDeleteUser = (userId: string, userName: string) => {
     Alert.alert(
       'تأكيد الحذف',
-      `هل أنت متأكد من حذف العضو "${userName}"؟`,
+      `هل أنت متأكد من حذف "${userName}"؟`,
       [
         { text: 'إلغاء', style: 'cancel' },
         {
@@ -177,14 +195,41 @@ export default function MembersScreen() {
           onPress: async () => {
             try {
               await deleteUser(userId);
-              Alert.alert('تم بنجاح', 'تم حذف العضو');
+              Alert.alert('تم بنجاح', 'تم حذف المستخدم');
             } catch (error) {
-              Alert.alert('خطأ', 'فشل في حذف العضو');
+              Alert.alert('خطأ', 'فشل في حذف المستخدم');
             }
           }
         }
       ]
     );
+  };
+
+  const handleBulkApproval = async () => {
+    if (selectedUsers.length === 0) {
+      Alert.alert('خطأ', 'يرجى اختيار مستخدمين للموافقة عليهم');
+      return;
+    }
+
+    try {
+      const endDate = calculateEndDate(startDate, subscriptionType);
+      
+      for (const userId of selectedUsers) {
+        if (approveUser) {
+          await approveUser(userId, {
+            type: subscriptionType,
+            startDate,
+            endDate
+          });
+        }
+      }
+
+      setSelectedUsers([]);
+      setShowBulkActionsModal(false);
+      Alert.alert('تم بنجاح', `تم تفعيل ${selectedUsers.length} اشتراك`);
+    } catch (error) {
+      Alert.alert('خطأ', 'فشل في تفعيل بعض الاشتراكات');
+    }
   };
 
   const openEditModal = (userToEdit: User) => {
@@ -202,6 +247,14 @@ export default function MembersScreen() {
     setShowApprovalModal(true);
   };
 
+  const toggleUserSelection = (userId: string) => {
+    setSelectedUsers(prev => 
+      prev.includes(userId) 
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId]
+    );
+  };
+
   const resetForm = () => {
     setFormName('');
     setFormPassword('');
@@ -216,16 +269,46 @@ export default function MembersScreen() {
     resetForm();
   };
 
+  const getStatusCounts = () => {
+    const active = allUsers.filter(u => {
+      const sub = subscriptions.find(s => s.userId === u.id);
+      return sub && new Date(sub.endDate) >= new Date();
+    }).length;
+    
+    const expired = allUsers.filter(u => {
+      const sub = subscriptions.find(s => s.userId === u.id);
+      return !sub || new Date(sub.endDate) < new Date();
+    }).length;
+    
+    const pending = pendingUsers.length;
+    
+    return { active, expired, pending, total: allUsers.length };
+  };
+
+  const statusCounts = getStatusCounts();
+
   const renderUser = ({ item }: { item: User }) => {
     const userSubscription = subscriptions.find(s => s.userId === item.id);
     const isPending = item.subscriptionStatus === 'pending';
+    const isSelected = selectedUsers.includes(item.id);
     
     return (
       <View style={styles.userContainer}>
-        <MemberCard
-          user={item}
-          subscription={userSubscription}
-        />
+        <TouchableOpacity
+          style={[styles.userCard, isSelected && styles.selectedUserCard]}
+          onPress={() => toggleUserSelection(item.id)}
+        >
+          <MemberCard
+            user={item}
+            subscription={userSubscription}
+          />
+          {isSelected && (
+            <View style={styles.selectedIndicator}>
+              <CheckCircle size={20} color="#007AFF" />
+            </View>
+          )}
+        </TouchableOpacity>
+        
         <View style={styles.userActions}>
           {isPending && (
             <TouchableOpacity
@@ -257,12 +340,46 @@ export default function MembersScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>إدارة الأعضاء</Text>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => setShowAddModal(true)}
-        >
-          <Plus size={24} color="#FFFFFF" />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          {selectedUsers.length > 0 && (
+            <TouchableOpacity
+              style={styles.bulkActionButton}
+              onPress={() => setShowBulkActionsModal(true)}
+            >
+              <SettingsIcon size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={styles.addButton}
+            onPress={() => setShowAddModal(true)}
+          >
+            <Plus size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Stats Cards */}
+      <View style={styles.statsContainer}>
+        <View style={styles.statCard}>
+          <UsersIcon size={20} color="#007AFF" />
+          <Text style={styles.statNumber}>{statusCounts.total}</Text>
+          <Text style={styles.statLabel}>إجمالي</Text>
+        </View>
+        <View style={styles.statCard}>
+          <CheckCircle size={20} color="#34C759" />
+          <Text style={styles.statNumber}>{statusCounts.active}</Text>
+          <Text style={styles.statLabel}>نشط</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Clock size={20} color="#FF9500" />
+          <Text style={styles.statNumber}>{statusCounts.pending}</Text>
+          <Text style={styles.statLabel}>معلق</Text>
+        </View>
+        <View style={styles.statCard}>
+          <UserX size={20} color="#FF3B30" />
+          <Text style={styles.statNumber}>{statusCounts.expired}</Text>
+          <Text style={styles.statLabel}>منتهي</Text>
+        </View>
       </View>
 
       {/* Pending Users Alert */}
@@ -272,6 +389,15 @@ export default function MembersScreen() {
           <Text style={styles.pendingText}>
             {pendingUsers.length} عضو في انتظار الموافقة
           </Text>
+          <TouchableOpacity
+            style={styles.approveAllButton}
+            onPress={() => {
+              setSelectedUsers(pendingUsers.map(u => u.id));
+              setShowBulkActionsModal(true);
+            }}
+          >
+            <Text style={styles.approveAllText}>موافقة جماعية</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -288,7 +414,7 @@ export default function MembersScreen() {
           />
         </View>
         
-        <View style={styles.filterContainer}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterContainer}>
           {(['all', 'active', 'expired', 'pending'] as const).map((status) => (
             <TouchableOpacity
               key={status}
@@ -308,8 +434,23 @@ export default function MembersScreen() {
               </Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
       </View>
+
+      {/* Selected Users Info */}
+      {selectedUsers.length > 0 && (
+        <View style={styles.selectionInfo}>
+          <Text style={styles.selectionText}>
+            تم اختيار {selectedUsers.length} مستخدم
+          </Text>
+          <TouchableOpacity
+            style={styles.clearSelectionButton}
+            onPress={() => setSelectedUsers([])}
+          >
+            <Text style={styles.clearSelectionText}>إلغاء الاختيار</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Users List */}
       <FlatList
@@ -318,6 +459,15 @@ export default function MembersScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <UsersIcon size={48} color="#8E8E93" />
+            <Text style={styles.emptyText}>لا توجد أعضاء</Text>
+            <Text style={styles.emptySubtext}>
+              {searchQuery ? 'لا توجد نتائج للبحث' : 'ابدأ بإضافة أعضاء جدد'}
+            </Text>
+          </View>
+        }
       />
 
       {/* Add/Edit User Modal */}
@@ -329,21 +479,21 @@ export default function MembersScreen() {
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>
-              {editingUser ? 'تعديل العضو' : 'إضافة عضو جديد'}
+              {editingUser ? 'تعديل المستخدم' : 'إضافة مستخدم جديد'}
             </Text>
             <TouchableOpacity onPress={closeModal}>
               <Text style={styles.cancelButton}>إلغاء</Text>
             </TouchableOpacity>
           </View>
 
-          <View style={styles.formContainer}>
+          <ScrollView style={styles.formContainer}>
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>الاسم</Text>
               <TextInput
                 style={styles.textInput}
                 value={formName}
                 onChangeText={setFormName}
-                placeholder="اسم العضو"
+                placeholder="اسم المستخدم"
                 textAlign="right"
               />
             </View>
@@ -416,7 +566,7 @@ export default function MembersScreen() {
                 {editingUser ? 'تحديث' : 'إضافة'}
               </Text>
             </TouchableOpacity>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
 
@@ -434,7 +584,7 @@ export default function MembersScreen() {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.formContainer}>
+          <ScrollView style={styles.formContainer}>
             <Text style={styles.approvalUserName}>
               {approvingUser?.name}
             </Text>
@@ -485,7 +635,72 @@ export default function MembersScreen() {
             >
               <Text style={styles.submitButtonText}>تفعيل الاشتراك</Text>
             </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* Bulk Actions Modal */}
+      <Modal
+        visible={showBulkActionsModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>إجراءات جماعية</Text>
+            <TouchableOpacity onPress={() => setShowBulkActionsModal(false)}>
+              <Text style={styles.cancelButton}>إلغاء</Text>
+            </TouchableOpacity>
           </View>
+
+          <ScrollView style={styles.formContainer}>
+            <Text style={styles.bulkActionTitle}>
+              المستخدمون المحددون: {selectedUsers.length}
+            </Text>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>نوع الاشتراك</Text>
+              <View style={styles.subscriptionContainer}>
+                {(['monthly', 'quarterly', 'yearly'] as const).map((type) => (
+                  <TouchableOpacity
+                    key={type}
+                    style={[
+                      styles.subscriptionButton,
+                      subscriptionType === type && styles.activeSubscriptionButton
+                    ]}
+                    onPress={() => setSubscriptionType(type)}
+                  >
+                    <Text style={[
+                      styles.subscriptionButtonText,
+                      subscriptionType === type && styles.activeSubscriptionButtonText
+                    ]}>
+                      {type === 'monthly' ? 'شهري' : 
+                       type === 'quarterly' ? 'ربع سنوي' : 'سنوي'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>تاريخ البداية</Text>
+              <TextInput
+                style={styles.textInput}
+                value={startDate}
+                onChangeText={setStartDate}
+                placeholder="YYYY-MM-DD"
+              />
+            </View>
+
+            <TouchableOpacity
+              style={styles.bulkApproveButton}
+              onPress={handleBulkApproval}
+            >
+              <Text style={styles.submitButtonText}>
+                تفعيل {selectedUsers.length} اشتراك
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
         </View>
       </Modal>
     </View>
@@ -512,6 +727,10 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#000',
   },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   addButton: {
     backgroundColor: '#007AFF',
     width: 44,
@@ -520,13 +739,52 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  bulkActionButton: {
+    backgroundColor: '#34C759',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    padding: 16,
+  },
+  statCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 12,
+    alignItems: 'center',
+    flex: 1,
+    marginHorizontal: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  statNumber: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#000',
+    marginTop: 4,
+  },
+  statLabel: {
+    fontSize: 10,
+    color: '#8E8E93',
+    textAlign: 'center',
+    marginTop: 2,
+  },
   pendingAlert: {
     backgroundColor: '#FFF3E0',
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     padding: 16,
     marginHorizontal: 16,
-    marginTop: 16,
+    marginTop: 8,
     borderRadius: 12,
     borderLeftWidth: 4,
     borderLeftColor: '#FF9500',
@@ -535,7 +793,19 @@ const styles = StyleSheet.create({
     color: '#FF9500',
     fontSize: 14,
     fontWeight: '600',
+    flex: 1,
     marginLeft: 8,
+  },
+  approveAllButton: {
+    backgroundColor: '#FF9500',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  approveAllText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
   controlsContainer: {
     backgroundColor: '#FFFFFF',
@@ -560,13 +830,13 @@ const styles = StyleSheet.create({
   },
   filterContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
   },
   filterButton: {
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
     backgroundColor: '#F2F2F7',
+    marginRight: 8,
   },
   activeFilterButton: {
     backgroundColor: '#007AFF',
@@ -579,11 +849,52 @@ const styles = StyleSheet.create({
   activeFilterButtonText: {
     color: '#FFFFFF',
   },
+  selectionInfo: {
+    backgroundColor: '#E8F5E8',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    marginHorizontal: 16,
+    borderRadius: 8,
+  },
+  selectionText: {
+    color: '#34C759',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  clearSelectionButton: {
+    backgroundColor: 'rgba(52, 199, 89, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  clearSelectionText: {
+    color: '#34C759',
+    fontSize: 12,
+    fontWeight: '600',
+  },
   listContainer: {
     padding: 16,
   },
   userContainer: {
     marginBottom: 16,
+  },
+  userCard: {
+    position: 'relative',
+  },
+  selectedUserCard: {
+    borderWidth: 2,
+    borderColor: '#007AFF',
+    borderRadius: 12,
+  },
+  selectedIndicator: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 2,
   },
   userActions: {
     flexDirection: 'row',
@@ -610,6 +921,24 @@ const styles = StyleSheet.create({
   },
   deleteButton: {
     backgroundColor: '#FFEBEE',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#8E8E93',
+    marginTop: 16,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#8E8E93',
+    marginTop: 8,
+    textAlign: 'center',
   },
   errorContainer: {
     flex: 1,
@@ -742,6 +1071,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   approveSubmitButton: {
+    backgroundColor: '#34C759',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  bulkActionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 20,
+    color: '#000',
+  },
+  bulkApproveButton: {
     backgroundColor: '#34C759',
     paddingVertical: 16,
     borderRadius: 12,

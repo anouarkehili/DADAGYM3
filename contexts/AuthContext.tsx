@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { AuthContextType, User } from '@/types';
-import { FirebaseService } from '@/services/firebaseService';
+import { GoogleSheetsService } from '@/services/googleSheets';
 import StorageService from '@/services/storage';
 import { parseQRData, generateQRData } from '@/utils/qrCode';
 
@@ -42,7 +42,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const login = async (username: string, password: string): Promise<boolean> => {
     setLoading(true);
     try {
-      const userData = await FirebaseService.getUserByCredentials(username, password);
+      const userData = await GoogleSheetsService.getUserByCredentials(username, password);
       if (userData) {
         setUser(userData);
         await StorageService.setItem('currentUser', userData);
@@ -65,7 +65,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return false;
       }
 
-      const userData = await FirebaseService.getUserByQR(qrData);
+      const userData = await GoogleSheetsService.getUserByQR(qrData);
       if (userData) {
         setUser(userData);
         await StorageService.setItem('currentUser', userData);
@@ -99,11 +99,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         email: userData.email
       };
 
-      const userId = await FirebaseService.addUser(newUser);
+      const userId = await GoogleSheetsService.addUser(newUser);
       
       // Generate QR code with user ID
       const qrCode = generateQRData({ ...newUser, id: userId });
-      await FirebaseService.updateUser(userId, { qrCode });
+      await GoogleSheetsService.updateUser(userId, { qrCode });
 
       const createdUser = { ...newUser, id: userId, qrCode };
       setUser(createdUser);

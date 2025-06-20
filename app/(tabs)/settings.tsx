@@ -14,6 +14,7 @@ import { useGym } from '@/contexts/GymContext';
 import { useRouter } from 'expo-router';
 import StorageService from '@/services/storage';
 import SocialMediaLinks from '@/components/SocialMediaLinks';
+import AdminQRGenerator from '@/components/AdminQRGenerator';
 import { 
   LogOut,
   Sync,
@@ -26,16 +27,24 @@ import {
   Trash2,
   Phone,
   MapPin,
-  Globe
+  Globe,
+  Users,
+  BarChart3,
+  Download,
+  Upload,
+  QrCode
 } from 'lucide-react-native';
 
 export default function SettingsScreen() {
   const { user, logout } = useAuth();
-  const { syncOfflineData } = useGym();
+  const { syncOfflineData, refreshData } = useGym();
   const router = useRouter();
 
   const [notifications, setNotifications] = React.useState(true);
   const [darkMode, setDarkMode] = React.useState(false);
+  const [autoSync, setAutoSync] = React.useState(true);
+
+  const isAdmin = user?.role === 'admin';
 
   const handleLogout = () => {
     Alert.alert(
@@ -68,6 +77,15 @@ export default function SettingsScreen() {
     }
   };
 
+  const handleRefreshData = async () => {
+    try {
+      await refreshData();
+      Alert.alert('تم بنجاح', 'تم تحديث البيانات بنجاح');
+    } catch (error) {
+      Alert.alert('خطأ', 'فشل في تحديث البيانات');
+    }
+  };
+
   const handleClearCache = () => {
     Alert.alert(
       'مسح البيانات المحلية',
@@ -84,6 +102,40 @@ export default function SettingsScreen() {
             } catch (error) {
               Alert.alert('خطأ', 'فشل في مسح البيانات');
             }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleExportData = () => {
+    Alert.alert(
+      'تصدير البيانات',
+      'سيتم تصدير جميع البيانات إلى ملف CSV',
+      [
+        { text: 'إلغاء', style: 'cancel' },
+        {
+          text: 'تصدير',
+          onPress: () => {
+            // Implement data export functionality
+            Alert.alert('قريباً', 'ميزة تصدير البيانات ستكون متاحة قريباً');
+          }
+        }
+      ]
+    );
+  };
+
+  const handleBackupData = () => {
+    Alert.alert(
+      'نسخ احتياطي',
+      'سيتم إنشاء نسخة احتياطية من جميع البيانات',
+      [
+        { text: 'إلغاء', style: 'cancel' },
+        {
+          text: 'إنشاء نسخة',
+          onPress: () => {
+            // Implement backup functionality
+            Alert.alert('قريباً', 'ميزة النسخ الاحتياطي ستكون متاحة قريباً');
           }
         }
       ]
@@ -108,7 +160,8 @@ export default function SettingsScreen() {
     subtitle, 
     onPress, 
     rightElement,
-    danger = false 
+    danger = false,
+    adminOnly = false
   }: {
     icon: React.ReactNode;
     title: string;
@@ -116,28 +169,33 @@ export default function SettingsScreen() {
     onPress?: () => void;
     rightElement?: React.ReactNode;
     danger?: boolean;
-  }) => (
-    <TouchableOpacity
-      style={styles.settingItem}
-      onPress={onPress}
-      disabled={!onPress}
-    >
-      <View style={styles.settingLeft}>
-        <View style={[styles.iconContainer, danger && styles.dangerIcon]}>
-          {icon}
+    adminOnly?: boolean;
+  }) => {
+    if (adminOnly && !isAdmin) return null;
+
+    return (
+      <TouchableOpacity
+        style={styles.settingItem}
+        onPress={onPress}
+        disabled={!onPress}
+      >
+        <View style={styles.settingLeft}>
+          <View style={[styles.iconContainer, danger && styles.dangerIcon]}>
+            {icon}
+          </View>
+          <View style={styles.settingText}>
+            <Text style={[styles.settingTitle, danger && styles.dangerText]}>
+              {title}
+            </Text>
+            {subtitle && (
+              <Text style={styles.settingSubtitle}>{subtitle}</Text>
+            )}
+          </View>
         </View>
-        <View style={styles.settingText}>
-          <Text style={[styles.settingTitle, danger && styles.dangerText]}>
-            {title}
-          </Text>
-          {subtitle && (
-            <Text style={styles.settingSubtitle}>{subtitle}</Text>
-          )}
-        </View>
-      </View>
-      {rightElement}
-    </TouchableOpacity>
-  );
+        {rightElement}
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <ScrollView style={styles.container}>
@@ -153,8 +211,22 @@ export default function SettingsScreen() {
           <Text style={styles.userRole}>
             {user?.role === 'admin' ? 'مدير النادي' : 'عضو'}
           </Text>
+          {user?.phone && (
+            <Text style={styles.userContact}>{user.phone}</Text>
+          )}
+          {user?.email && (
+            <Text style={styles.userContact}>{user.email}</Text>
+          )}
         </View>
       </View>
+
+      {/* Admin QR Generator */}
+      {isAdmin && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>أدوات الإدارة</Text>
+          <AdminQRGenerator />
+        </View>
+      )}
 
       {/* Contact Info */}
       <View style={styles.section}>
@@ -219,6 +291,19 @@ export default function SettingsScreen() {
             />
           }
         />
+
+        <SettingItem
+          icon={<Sync size={20} color="#007AFF" />}
+          title="المزامنة التلقائية"
+          subtitle="مزامنة البيانات تلقائياً عند الاتصال بالإنترنت"
+          rightElement={
+            <Switch
+              value={autoSync}
+              onValueChange={setAutoSync}
+              trackColor={{ false: '#E5E5EA', true: '#007AFF' }}
+            />
+          }
+        />
       </View>
 
       {/* Data & Sync */}
@@ -234,8 +319,25 @@ export default function SettingsScreen() {
 
         <SettingItem
           icon={<Database size={20} color="#007AFF" />}
-          title="إدارة البيانات"
-          subtitle="عرض وإدارة البيانات المحفوظة محلياً"
+          title="تحديث البيانات"
+          subtitle="تحديث البيانات من الخادم"
+          onPress={handleRefreshData}
+        />
+
+        <SettingItem
+          icon={<Download size={20} color="#007AFF" />}
+          title="تصدير البيانات"
+          subtitle="تصدير البيانات إلى ملف CSV"
+          onPress={handleExportData}
+          adminOnly
+        />
+
+        <SettingItem
+          icon={<Upload size={20} color="#007AFF" />}
+          title="نسخ احتياطي"
+          subtitle="إنشاء نسخة احتياطية من البيانات"
+          onPress={handleBackupData}
+          adminOnly
         />
 
         <SettingItem
@@ -246,6 +348,39 @@ export default function SettingsScreen() {
           danger
         />
       </View>
+
+      {/* Admin Tools */}
+      {isAdmin && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>أدوات الإدارة المتقدمة</Text>
+          
+          <SettingItem
+            icon={<Users size={20} color="#007AFF" />}
+            title="إدارة المستخدمين"
+            subtitle="عرض وإدارة جميع المستخدمين"
+            onPress={() => router.push('/(tabs)/members')}
+          />
+
+          <SettingItem
+            icon={<BarChart3 size={20} color="#007AFF" />}
+            title="تقارير الحضور"
+            subtitle="عرض تقارير مفصلة عن الحضور"
+            onPress={() => router.push('/(tabs)/attendance')}
+          />
+
+          <SettingItem
+            icon={<QrCode size={20} color="#007AFF" />}
+            title="إدارة أكواد QR"
+            subtitle="إنشاء وإدارة أكواد QR للنادي"
+          />
+
+          <SettingItem
+            icon={<SettingsIcon size={20} color="#007AFF" />}
+            title="إعدادات النادي"
+            subtitle="تخصيص إعدادات النادي والأسعار"
+          />
+        </View>
+      )}
 
       {/* App Info */}
       <View style={styles.section}>
@@ -267,6 +402,7 @@ export default function SettingsScreen() {
           icon={<SettingsIcon size={20} color="#007AFF" />}
           title="إعدادات متقدمة"
           subtitle="خيارات إضافية للمطورين والمديرين"
+          adminOnly
         />
       </View>
 
@@ -285,6 +421,7 @@ export default function SettingsScreen() {
       <View style={styles.versionContainer}>
         <Text style={styles.versionText}>DADA GYM v1.0.0</Text>
         <Text style={styles.buildText}>Build 2025.01.01</Text>
+        <Text style={styles.copyrightText}>© 2025 DADA GYM. جميع الحقوق محفوظة.</Text>
       </View>
     </ScrollView>
   );
@@ -326,6 +463,12 @@ const styles = StyleSheet.create({
   userRole: {
     fontSize: 16,
     color: '#8E8E93',
+    marginBottom: 8,
+  },
+  userContact: {
+    fontSize: 14,
+    color: '#8E8E93',
+    marginBottom: 2,
   },
   section: {
     backgroundColor: '#FFFFFF',
@@ -400,5 +543,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#8E8E93',
     marginTop: 4,
+  },
+  copyrightText: {
+    fontSize: 12,
+    color: '#8E8E93',
+    marginTop: 8,
+    textAlign: 'center',
   },
 });
