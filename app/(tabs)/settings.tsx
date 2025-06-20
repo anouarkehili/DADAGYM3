@@ -15,25 +15,7 @@ import { useRouter } from 'expo-router';
 import StorageService from '@/services/storage';
 import SocialMediaLinks from '@/components/SocialMediaLinks';
 import AdminQRGenerator from '@/components/AdminQRGenerator';
-import { 
-  LogOut,
-  Sync,
-  Database,
-  Settings as SettingsIcon,
-  Info,
-  Shield,
-  Moon,
-  Bell,
-  Trash2,
-  Phone,
-  MapPin,
-  Globe,
-  Users,
-  BarChart3,
-  Download,
-  Upload,
-  QrCode
-} from 'lucide-react-native';
+import { LogOut, FolderSync as Sync, Database, Settings as SettingsIcon, Info, Shield, Moon, Bell, Trash2, Phone, MapPin, Globe, Users, ChartBar as BarChart3, Download, Upload, QrCode } from 'lucide-react-native';
 
 export default function SettingsScreen() {
   const { user, logout } = useAuth();
